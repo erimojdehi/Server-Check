@@ -35,7 +35,7 @@ def is_online(host):
 
 # --- Logging ---
 def log_line(line=""):
-    with open(LOG_FILE, "a") as f:
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(line + "\n")
 
 def log_separator():
@@ -65,9 +65,9 @@ def trim_log():
     if not os.path.exists(LOG_FILE):
         return
     cutoff = datetime.datetime.now() - datetime.timedelta(days=30)
-    with open(LOG_FILE, "r") as f:
+    with open(LOG_FILE, "r", encoding="utf-8") as f:
         lines = f.readlines()
-    with open(LOG_FILE, "w") as f:
+    with open(LOG_FILE, "w", encoding="utf-8") as f:
         keep = False
         for line in lines:
             if line.startswith("🔁 PING CHECK @"):
