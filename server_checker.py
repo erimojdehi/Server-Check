@@ -5,11 +5,21 @@ import platform
 import json
 import datetime
 import os
+import sys
 import threading
 import time
 
 # --- Setup ---
-script_dir = os.path.dirname(os.path.realpath(__file__)) if '__file__' in globals() else os.getcwd()
+if platform.system().lower() == "windows":
+    CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW
+else:
+    CREATE_NO_WINDOW = 0
+
+if getattr(sys, 'frozen', False):
+    script_dir = os.path.dirname(sys.executable)
+else:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
 os.chdir(script_dir)
 
 LOG_FILE = "ping_log.txt"
@@ -32,7 +42,12 @@ def save_servers(server_list):
 # --- Ping ---
 def is_online(host):
     param = "-n" if platform.system().lower() == "windows" else "-c"
-    result = subprocess.run(["ping", param, "1", host], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    result = subprocess.run(
+        ["ping", param, "1", host],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=CREATE_NO_WINDOW  # 🔥 This suppresses all windows
+    )
     return result.returncode == 0
 
 # --- Logging ---
