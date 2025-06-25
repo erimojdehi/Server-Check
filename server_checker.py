@@ -90,9 +90,13 @@ class ServerMonitorApp:
         self.buffered_servers = self.servers.copy()
         self.status_labels = {}
         self.monitoring_active = True
+        self.email_list = []
+        self.last_status = {}
         self.check_interval = DEFAULT_INTERVAL_SECONDS
         self.time_remaining = self.check_interval
         self.countdown_label = None
+        self.sender_email = ""
+        self.sender_password = ""
 
         self.build_gui()
         self.start_hourly_loop()
@@ -134,6 +138,27 @@ class ServerMonitorApp:
         self.interval_var = tk.StringVar(value="60")
         interval_dropdown = tk.OptionMenu(interval_frame, self.interval_var, "5", "10", "15", "30", "60", "120", command=self.update_interval)
         interval_dropdown.pack(side=tk.LEFT)
+
+        email_frame = tk.Frame(self.frame)
+        email_frame.pack(pady=(10, 0))
+
+        tk.Label(email_frame, text="Notification Emails:").pack(side=tk.LEFT)
+        self.email_entry = tk.Entry(email_frame, width=35)
+        self.email_entry.pack(side=tk.LEFT, padx=5)
+        tk.Button(email_frame, text="Save Emails", command=self.save_emails).pack(side=tk.LEFT)
+
+        sender_frame = tk.Frame(self.frame)
+        sender_frame.pack(pady=(5, 0))
+
+        tk.Label(sender_frame, text="Sender Email:").pack(side=tk.LEFT)
+        self.sender_email_entry = tk.Entry(sender_frame, width=25)
+        self.sender_email_entry.pack(side=tk.LEFT, padx=5)
+
+        tk.Label(sender_frame, text="Password:").pack(side=tk.LEFT)
+        self.sender_pass_entry = tk.Entry(sender_frame, width=15, show="*")
+        self.sender_pass_entry.pack(side=tk.LEFT, padx=5)
+
+        tk.Button(sender_frame, text="Save Sender", command=self.save_sender_credentials).pack(side=tk.LEFT, padx=5)
 
         self.countdown_label = tk.Label(self.frame, text="Next ping in: 60m 0s", font=("Segoe UI", 10))
         self.countdown_label.pack(pady=(5, 0))
@@ -194,11 +219,23 @@ class ServerMonitorApp:
     def run_ping(self, server_list):
         def ping_and_update():
             results = {}
+            alerts = []
             for s in server_list:
-                results[s] = is_online(s)
+                status = is_online(s)
+                results[s] = status
+
+                # Smart alert logic: only alert if server went from ONLINE to OFFLINE
+                previous = self.last_status.get(s)
+                if previous is True and status is False:
+                    alerts.append(s)
+                self.last_status[s] = status  # update last known status
+
             log_status_block(results)
             trim_log()
             self.render_results(results)
+
+            if alerts and self.email_list:
+                self.send_email_alert(alerts)
 
         threading.Thread(target=ping_and_update).start()
 
@@ -215,6 +252,58 @@ class ServerMonitorApp:
             self.countdown_label.config(text="Monitoring paused.")
 
         self.root.after(1000, self.update_countdown)
+
+    def save_emails(self):
+        raw = self.email_entry.get().strip()
+        if raw:
+            self.email_list = [email.strip() for email in raw.split(",") if "@" in email]
+            messagebox.showinfo("Saved", f"{len(self.email_list)} email(s) saved.")
+        else:
+            self.email_list = []
+            messagebox.showinfo("Cleared", "Email list cleared.")
+
+    def save_sender_credentials(self):  # ⬅️ ADD THIS HERE
+        email = self.sender_email_entry.get().strip()
+        password = self.sender_pass_entry.get().strip()
+
+        if email and password:
+            self.sender_email = email
+            self.sender_password = password
+            messagebox.showinfo("Saved", "Sender email and password saved.")
+        else:
+            messagebox.showerror("Error", "Both sender email and password are required.")
+
+    def send_email_alert(self, failed_servers):
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+
+        sender = self.sender_email
+        password = self.sender_password
+
+        if not sender or not password:
+            print("No sender credentials set. Skipping email.")
+            return
+        subject = "⚠️ Server Offline Alert"
+
+        body = "The following server(s) are OFFLINE:\n\n"
+        for server in failed_servers:
+            body += f"❌ {server}\n"
+
+        msg = MIMEMultipart()
+        msg["From"] = sender
+        msg["To"] = ", ".join(self.email_list)
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain"))
+
+        try:
+            with smtplib.SMTP("smtp.office365.com", 587) as server:
+                server.starttls()
+                server.login(sender, password)
+                server.sendmail(sender, self.email_list, msg.as_string())
+                print("Email alert sent.")
+        except Exception as e:
+            print("Failed to send email:", e)
 
     def update_interval(self, selected):
         try:
