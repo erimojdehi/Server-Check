@@ -1,61 +1,117 @@
-# 🖥️ Server Availability Monitor
+# 🛡️ Server Availability Monitor
 
-This lightweight Windows application monitors a list of servers in real-time and notifies you when any of them go offline. It's fully GUI-based, customizable, portable, and includes smart email alerts and detailed logging — no Python installation required.
+A secure, standalone desktop monitoring tool built for corporate IT, sysadmins, and fleet managers.  
+Continuously checks multiple internal or external servers, logs their status, and alerts your team when something goes down — all from a beautifully designed tray-based interface.
 
 ---
 
 ## 🚀 Features
 
-### ✅ Real-Time Server Monitoring
-- Pings each server on a schedule (you choose the interval: 5–120 minutes)
-- Detects `ONLINE` or `OFFLINE` status
-- Runs silently in the background
-
-### ✅ Graphical User Interface
-- Add or remove servers with a few clicks
-- Adjust monitoring frequency from a dropdown
-- Pause or resume background monitoring at any time
-- Live countdown shows time until next ping
-- Manually trigger a check with the "Check Now" button
-- "Apply Changes" saves new settings and pings instantly
-- "Records" opens the log file for easy viewing
-
-### ✅ Smart Email Alerts
-- Sends alert emails **only when a server goes from ONLINE → OFFLINE**
-- Avoids spamming you with repeat alerts
-- Enter one or more **recipient emails**
-- Enter a **sender email** and **password** (used to send the alert)
-- Works with **Outlook**, **Gmail**, **Hotmail**, and most custom SMTP accounts
-
-### ✅ Logging & History
-- Maintains a detailed `ping_log.txt` in the same folder as the app
-- Automatically tracks:
-  - Ping results
-  - Server list changes
-  - Timestamps for every event
-- Keeps up to 30 days of records
-
-### ✅ Portable `.exe` — No Installation Needed
-- Runs on any Windows system (Windows 10 or 11)
-- Does **not require Python or installation**
-- Just double-click to launch
-
-### ✅ Minimal System Footprint
-- Runs silently in the background
-- No flashing CMD windows or terminal pop-ups
-- No files stored outside the app folder
+✅ **Real-time server monitoring** (unlimited servers)  
+✅ **Smart email alerts** (only when server status changes)  
+✅ **Runs silently in system tray**  
+✅ **Start with Windows** (optional)  
+✅ **Start minimized** (optional)  
+✅ **Secure sender email handling** (password never stored)  
+✅ **Log reports with 30-day auto-trimming**  
+✅ **Dark/Light mode toggle**  
+✅ **Network-aware** (automatically detects if you're offline and skips checks)  
+✅ **Dashboard counts and scrollable log viewer**  
+✅ **Fully portable `.exe` — no install or Python required**
 
 ---
 
-## 📂 Files Created
+## 🧱 Designed for Corporates & Teams
 
-These files are created automatically in the **same folder as the `.exe`**:
+🔒 **Built with Security First**  
+- Email passwords are never saved or exposed  
+- Log files are local only, never transmitted  
+- Safe for internal/corporate networks behind firewalls  
 
-| File            | Purpose                          |
-|-----------------|----------------------------------|
-| `ping_log.txt`  | Log of server status checks      |
-| `servers.json`  | Stores your saved server list    |
+🧠 **Built for IT Scalability**  
+- Supports any number of server endpoints  
+- Perfect for monitoring internal apps, telematics systems, intranet servers, or cloud endpoints  
+- No third-party services required
 
-These are updated and reused each time you run the app.
+📂 **Built for Audit Readiness**  
+- Logs are timestamped and auto-trimmed after 30 days  
+- View logs from the GUI or open directly from file  
+- Server configuration is customizable via GUI
 
 ---
+
+## 📦 How It Works
+
+1. **Run the `.exe`** – no installation needed  
+2. **Add servers** via the GUI  
+3. **Set alert email(s)** and optional sender credentials  
+4. **Apply changes** and let it run in the background  
+5. Close the window — it minimizes to the system tray  
+6. Right-click tray icon to Show or Exit
+
+---
+
+## 📨 Email Alerts
+
+- Works with Gmail, Outlook, Hotmail, or internal SMTPs  
+- Add one or more recipients  
+- Only sends an alert if a server goes **offline** (not every cycle)  
+- Internet-aware: no false alerts if your laptop is offline
+
+---
+
+## 🌐 Network Smart
+
+- If you disconnect from Wi-Fi or LAN, the app automatically detects it  
+- Logs "No internet connection" and **skips that check**  
+- Never alerts on false negatives due to local connectivity issues
+
+---
+
+## 📋 Requirements
+
+- Windows 10 or 11  
+- No Python installation needed  
+- Built-in SMTP support  
+- Optional `.ico` for branding (already included in `.exe`)
+
+---
+
+## 🧰 Tech Stack
+
+- **Python** (compiled with PyInstaller)  
+- **Tkinter** GUI  
+- **pystray + Pillow** for tray icon  
+- **winshell** for startup integration  
+- **subprocess**, `ping` for connectivity checks  
+- No internet access required to run (except for alerts)
+
+---
+
+## 📥 Download
+
+> 🚀 [Click here to download the latest `.exe`](https://drive.google.com/file/d/1OZgoMp9dQMpJzRCPuSuXMdmRJbf4G8hg/view?usp=drive_link)
+
+---
+
+## 🔒 License
+
+MIT License — free to use, share, and customize.
+
+---
+
+## 🤝 Contribute
+
+Have an idea or bug report? [Open an issue](https://github.com/yourusername/server-monitor/issues) or submit a PR.
+
+---
+
+## 🧑‍💼 Perfect For
+
+- IT departments
+- Fleet and infrastructure teams
+- Internal server monitoring
+- Secure environments where SaaS tools aren't allowed
+
+---
+
