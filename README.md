@@ -102,7 +102,7 @@ MIT License — free to use, share, and customize.
 
 ## 🤝 Contribute
 
-Have an idea or bug report? [Open an issue](https://github.com/yourusername/server-monitor/issues) or submit a PR.
+Have an idea or bug report? [Open an issue](https://github.com/erimojdehi/Server-Check/issues) or submit a PR.
 
 ---
 
