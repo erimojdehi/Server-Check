@@ -41,8 +41,23 @@ def save_servers(server_list):
 # --- Ping ---
 def is_online(host):
     param = "-n" if platform.system().lower() == "windows" else "-c"
-    result = subprocess.run(["ping", param, "1", host], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return result.returncode == 0
+    command = ["ping", param, "1", host]
+
+    startupinfo = None
+    if platform.system().lower() == "windows":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+    try:
+        result = subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            startupinfo=startupinfo
+        )
+        return result.returncode == 0
+    except:
+        return False
 
 # --- Logging ---
 def log_line(line=""):
@@ -151,7 +166,7 @@ class ServerMonitorApp:
 
     def create_tray_icon_image(self):
         try:
-            return Image.open("icon.png")
+            return Image.open("icon.ico")
         except Exception as e:
             print("Failed to load tray icon. Using default square icon.")
             image = Image.new("RGB", (64, 64), "white")
