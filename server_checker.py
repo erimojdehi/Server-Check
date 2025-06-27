@@ -4,28 +4,27 @@ import subprocess
 import platform
 import json
 import datetime
+import socket
 import os
-import sys
+from PIL import Image, ImageDraw
+import pystray
 import threading
 import time
+import shutil
+import winshell
+import pythoncom
+from win32com.client import Dispatch
+import sys
 
 # --- Setup ---
-if platform.system().lower() == "windows":
-    CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW
-else:
-    CREATE_NO_WINDOW = 0
-
-if getattr(sys, 'frozen', False):
-    script_dir = os.path.dirname(sys.executable)
-else:
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-
+script_dir = os.path.dirname(os.path.realpath(__file__)) if '__file__' in globals() else os.getcwd()
 os.chdir(script_dir)
 
 LOG_FILE = "ping_log.txt"
 SERVERS_FILE = "servers.json"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 DEFAULT_INTERVAL_SECONDS = 3600
+SETTINGS_FILE = "settings.json"
 
 # --- Load/Save Servers ---
 def load_servers():
@@ -42,12 +41,7 @@ def save_servers(server_list):
 # --- Ping ---
 def is_online(host):
     param = "-n" if platform.system().lower() == "windows" else "-c"
-    result = subprocess.run(
-        ["ping", param, "1", host],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        creationflags=CREATE_NO_WINDOW  # 🔥 This suppresses all windows
-    )
+    result = subprocess.run(["ping", param, "1", host], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return result.returncode == 0
 
 # --- Logging ---
@@ -101,10 +95,14 @@ class ServerMonitorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Server Availability Monitor")
+        self.root.protocol("WM_DELETE_WINDOW", self.minimize_to_tray)
+        self.tray_icon = None
+        self.tray_thread = None
         self.servers = load_servers()
         self.buffered_servers = self.servers.copy()
         self.status_labels = {}
         self.monitoring_active = True
+        self.startup_enabled = False
         self.email_list = []
         self.last_status = {}
         self.check_interval = DEFAULT_INTERVAL_SECONDS
@@ -112,13 +110,103 @@ class ServerMonitorApp:
         self.countdown_label = None
         self.sender_email = ""
         self.sender_password = ""
-
+        self.load_settings_from_file()
         self.build_gui()
         self.start_hourly_loop()
+        self.start_tray_icon()
+        if self.start_minimized_var.get():
+            self.root.withdraw()
+
+    def start_tray_icon(self):
+        def quit_app(icon, item):
+            icon.stop()
+            self.root.quit()
+
+        def show_window(icon, item):
+            self.root.after(0, self.root.deiconify)
+
+        image = self.create_tray_icon_image()
+        menu = pystray.Menu(
+            pystray.MenuItem("Show", show_window),
+            pystray.MenuItem("Exit", quit_app)
+        )
+
+        self.tray_icon = pystray.Icon("ServerMonitor", image, "Server Monitor", menu)
+
+        def run_icon():
+            self.tray_icon.run()
+
+        threading.Thread(target=run_icon, daemon=True).start()
+
+    def on_window_close(self):
+        self.minimize_to_tray()
+        messagebox.showinfo("Running in Background", "Server Monitor is still running in the system tray. Right-click the tray icon to Exit.")
+
+    def is_internet_connected(self):
+        try:
+            socket.create_connection(("8.8.8.8", 53), timeout=3)
+            return True
+        except OSError:
+            return False
+
+    def create_tray_icon_image(self):
+        try:
+            return Image.open("icon.png")
+        except Exception as e:
+            print("Failed to load tray icon. Using default square icon.")
+            image = Image.new("RGB", (64, 64), "white")
+            draw = ImageDraw.Draw(image)
+            draw.rectangle((16, 16, 48, 48), fill="black")
+            return image
+
+    def show_tray_icon(self):
+        def quit_app(icon, item):
+            icon.stop()
+            self.root.destroy()
+
+        def show_window(icon, item):
+            icon.stop()
+            self.root.after(0, self.root.deiconify)
+
+        menu = pystray.Menu(
+            pystray.MenuItem("Show", show_window),
+            pystray.MenuItem("Exit", quit_app)
+        )
+
+        icon = pystray.Icon("ServerMonitor", self.create_tray_icon_image(), "Server Monitor", menu)
+        self.tray_icon = icon
+        icon.run()
+
+    def minimize_to_tray(self):
+        self.root.withdraw()
+        messagebox.showinfo("Running in Background", "Server Monitor is still running in the system tray. Right-click the tray icon to Show or Exit.")
+
+    def update_log_viewer(self):
+        try:
+            with open(LOG_FILE, "r", encoding="utf-8") as f:
+                lines = f.readlines()[-100:]  # Show last 100 lines
+            content = "".join(lines)
+            self.log_text.config(state=tk.NORMAL)
+            self.log_text.delete("1.0", tk.END)
+            self.log_text.insert(tk.END, content)
+            self.log_text.config(state=tk.DISABLED)
+        except Exception as e:
+            print("Could not update log viewer:", e)
 
     def build_gui(self):
         self.frame = tk.Frame(self.root, padx=10, pady=10)
         self.frame.pack()
+
+        self.startup_var = tk.BooleanVar()
+        startup_check = tk.Checkbutton(self.frame, text="Run at system startup", variable=self.startup_var, command=self.toggle_startup)
+        startup_check.pack(pady=(5, 10))
+        self.start_minimized_var = tk.BooleanVar()
+        minimize_check = tk.Checkbutton(
+            self.frame,
+            text="Start minimized to tray",
+            variable=self.start_minimized_var
+        )
+        minimize_check.pack(pady=(0, 10))
 
         tk.Label(self.frame, text="Servers:", font=("Segoe UI", 12, "bold")).pack()
 
@@ -151,6 +239,7 @@ class ServerMonitorApp:
 
         tk.Label(interval_frame, text="Ping interval (minutes):").pack(side=tk.LEFT)
         self.interval_var = tk.StringVar(value="60")
+        self.interval_var.set(str(self.check_interval // 60))
         interval_dropdown = tk.OptionMenu(interval_frame, self.interval_var, "5", "10", "15", "30", "60", "120", command=self.update_interval)
         interval_dropdown.pack(side=tk.LEFT)
 
@@ -160,6 +249,7 @@ class ServerMonitorApp:
         tk.Label(email_frame, text="Notification Emails:").pack(side=tk.LEFT)
         self.email_entry = tk.Entry(email_frame, width=35)
         self.email_entry.pack(side=tk.LEFT, padx=5)
+        self.email_entry.insert(0, ", ".join(self.email_list))
         tk.Button(email_frame, text="Save Emails", command=self.save_emails).pack(side=tk.LEFT)
 
         sender_frame = tk.Frame(self.frame)
@@ -168,6 +258,7 @@ class ServerMonitorApp:
         tk.Label(sender_frame, text="Sender Email:").pack(side=tk.LEFT)
         self.sender_email_entry = tk.Entry(sender_frame, width=25)
         self.sender_email_entry.pack(side=tk.LEFT, padx=5)
+        self.sender_email_entry.insert(0, self.sender_email)
 
         tk.Label(sender_frame, text="Password:").pack(side=tk.LEFT)
         self.sender_pass_entry = tk.Entry(sender_frame, width=15, show="*")
@@ -175,9 +266,26 @@ class ServerMonitorApp:
 
         tk.Button(sender_frame, text="Save Sender", command=self.save_sender_credentials).pack(side=tk.LEFT, padx=5)
 
+        self.dashboard_label = tk.Label(self.frame, text="✅ 0 Online | ❌ 0 Offline", font=("Segoe UI", 10, "bold"))
+        self.dashboard_label.pack(pady=(5, 0))
+        tk.Label(self.frame, text="Recent Log:", font=("Segoe UI", 10, "bold")).pack(pady=(10, 0))
+
+        log_frame = tk.Frame(self.frame)
+        log_frame.pack(padx=5, pady=(0, 10), fill=tk.BOTH, expand=True)
+
+        self.log_text = tk.Text(log_frame, height=8, wrap=tk.WORD, state=tk.DISABLED)
+        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        scrollbar = tk.Scrollbar(log_frame, command=self.log_text.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.log_text.config(yscrollcommand=scrollbar.set)
+
         self.countdown_label = tk.Label(self.frame, text="Next ping in: 60m 0s", font=("Segoe UI", 10))
         self.countdown_label.pack(pady=(5, 0))
         self.update_countdown()
+
+        self.theme_mode = "light"
+        tk.Button(self.frame, text="Light/Dark Theme", command=self.toggle_theme).pack(pady=(5, 0))
 
     def render_server_list(self):
         for widget in self.server_list_frame.winfo_children():
@@ -191,14 +299,80 @@ class ServerMonitorApp:
             tk.Button(row, text="Delete", command=lambda s=server: self.delete_server(s)).pack(side=tk.RIGHT)
 
     def render_results(self, results):
-        for widget in self.results_frame.winfo_children():
-            widget.destroy()
+            for widget in self.results_frame.winfo_children():
+                widget.destroy()
 
-        for server, status in results.items():
-            color = "green" if status else "red"
-            text = f"{server} is {'ONLINE ✅' if status else 'OFFLINE ❌'}"
-            label = tk.Label(self.results_frame, text=text, fg=color, font=("Segoe UI", 10, "bold"))
-            label.pack()
+            online_count = 0
+            offline_count = 0
+
+            for server, status in results.items():
+                color = "green" if status else "red"
+                text = f"{server} is {'ONLINE ✅' if status else 'OFFLINE ❌'}"
+                label = tk.Label(self.results_frame, text=text, fg=color, font=("Segoe UI", 10, "bold"))
+                label.pack()
+
+                if status:
+                    online_count += 1
+                else:
+                    offline_count += 1
+
+            self.dashboard_label.config(text=f"✅ {online_count} Online | ❌ {offline_count} Offline")
+            self.update_log_viewer()
+
+    def save_settings_to_file(self):
+            data = {
+                "email_list": self.email_list,
+                "sender_email": self.sender_email,
+                "interval_minutes": self.check_interval // 60,
+                "startup_enabled": self.startup_var.get(),
+                "start_minimized": self.start_minimized_var.get()
+            }
+            try:
+                with open(SETTINGS_FILE, "w") as f:
+                    json.dump(data, f)
+            except Exception as e:
+                print("Failed to save settings:", e)
+
+    def toggle_startup(self):
+            startup_path = winshell.startup()
+            exe_path = sys.executable
+            shortcut_path = os.path.join(startup_path, "ServerMonitor.lnk")
+
+            if self.startup_var.get():
+                try:
+                    shell = Dispatch('WScript.Shell')
+                    shortcut = shell.CreateShortCut(shortcut_path)
+                    shortcut.Targetpath = exe_path
+                    shortcut.WorkingDirectory = os.path.dirname(exe_path)
+                    shortcut.IconLocation = exe_path
+                    shortcut.save()
+                    print("Startup shortcut created.")
+                except Exception as e:
+                    print("Failed to add startup shortcut:", e)
+            else:
+                if os.path.exists(shortcut_path):
+                    try:
+                        os.remove(shortcut_path)
+                        print("Startup shortcut removed.")
+                    except Exception as e:
+                        print("Failed to remove startup shortcut:", e)
+
+    def load_settings_from_file(self):
+            if not os.path.exists(SETTINGS_FILE):
+                return
+            try:
+                with open(SETTINGS_FILE, "r") as f:
+                    data = json.load(f)
+
+                    self.email_list = data.get("email_list", [])
+                    self.sender_email = data.get("sender_email", "")
+                    interval = data.get("interval_minutes", 60)
+                    self.check_interval = interval * 60
+                    self.time_remaining = self.check_interval
+                    self.startup_var.set(data.get("startup_enabled", False))
+                    self.start_minimized_var.set(data.get("start_minimized", False))
+            except Exception as e:
+                print("Failed to load settings:", e)
 
     def add_server(self):
         new_server = self.new_server_var.get().strip()
@@ -258,6 +432,20 @@ class ServerMonitorApp:
         self.monitoring_active = not self.monitoring_active
         self.pause_button.config(text="Resume Monitor" if not self.monitoring_active else "Pause Monitor")
 
+    def toggle_theme(self):
+        self.theme_mode = "dark" if self.theme_mode == "light" else "light"
+        bg = "#222222" if self.theme_mode == "dark" else "#FFFFFF"
+        fg = "#FFFFFF" if self.theme_mode == "dark" else "#000000"
+    
+        widgets = self.root.winfo_children() + self.frame.winfo_children()
+        for w in widgets:
+            try:
+                w.configure(bg=bg, fg=fg)
+            except:
+                pass
+        self.root.configure(bg=bg)
+        self.frame.configure(bg=bg)
+
     def update_countdown(self):
         if self.monitoring_active:
             minutes, seconds = divmod(self.time_remaining, 60)
@@ -276,15 +464,18 @@ class ServerMonitorApp:
         else:
             self.email_list = []
             messagebox.showinfo("Cleared", "Email list cleared.")
+        self.save_settings_to_file()
 
-    def save_sender_credentials(self):  # ⬅️ ADD THIS HERE
+    def save_sender_credentials(self):
         email = self.sender_email_entry.get().strip()
         password = self.sender_pass_entry.get().strip()
 
         if email and password:
             self.sender_email = email
             self.sender_password = password
-            messagebox.showinfo("Saved", "Sender email and password saved.")
+            self.sender_pass_entry.delete(0, tk.END)  # Auto-clear password field
+            messagebox.showinfo("Saved", "Sender email and password saved. Password field has been cleared for security.")
+            self.save_settings_to_file()
         else:
             messagebox.showerror("Error", "Both sender email and password are required.")
 
@@ -328,6 +519,7 @@ class ServerMonitorApp:
             self.countdown_label.config(text=f"Next ping in: {minutes}m 0s")
         except ValueError:
             messagebox.showerror("Invalid Input", "Interval must be a number.")
+        self.save_settings_to_file()
 
     def open_log_file(self):
         os.startfile(LOG_FILE)
@@ -336,8 +528,11 @@ class ServerMonitorApp:
         def loop():
             while True:
                 if self.monitoring_active:
-                    self.run_ping(self.servers)
-
+                    if self.is_internet_connected():
+                        self.run_ping(self.servers)
+                    else:
+                        log_line("🌐 No internet connection. Ping skipped.")
+                        self.dashboard_label.config(text="🌐 No internet – skipping ping")
                 for _ in range(self.check_interval):
                     if not self.monitoring_active:
                         break
